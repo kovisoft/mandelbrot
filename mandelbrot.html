@@ -20,8 +20,9 @@ var canvasWidth  = canvas.width  = document.documentElement.clientWidth;
 var canvasHeight = canvas.height = document.documentElement.clientHeight;
 var imageData = ctx.getImageData( 0, 0, canvasWidth, canvasHeight );
 var data = imageData.data;
-var startTouches = {};
-var targetTouches = {};
+var startTouches = [];
+var targetTouches = [];
+var previousTouches = [];
 
 var y0 = -1.5;
 var y1 =  1.5;
@@ -281,7 +282,8 @@ function touchStart( event )
     }
 //    startTouches = makeTouches(event.touches);
     startTouches = makeTouches(event.targetTouches);
-    targetTouches = {};
+    targetTouches = [];
+    previousTouches = [];
 }
 
 function touchMove( event )
@@ -315,7 +317,22 @@ function touchMove( event )
         }
     }
 
-    if ( startTouches.length == 1 && targetTouches.length == 1 )
+    if ( startTouches.length > 1 && targetTouches.length > 1 )
+    {
+        if ( previousTouches.length < 2 )
+            previousTouches = targetTouches;
+        if ( Math.abs(targetTouches[0].x - previousTouches[0].x) > 10 ||
+             Math.abs(targetTouches[0].y - previousTouches[0].y) > 10 )
+        {
+            var factor = Math.abs(targetTouches[1].x   - targetTouches[0].x) /
+                         Math.abs(previousTouches[1].x - previousTouches[0].x);
+            ctx.drawImage( canvas,
+                           (1-factor)*0.5*canvas.width, (1-factor)*0.5*canvas.height,
+                           factor*canvas.width, factor*canvas.height );
+            previousTouches = targetTouches;
+        }
+    }
+    else if ( startTouches.length == 1 && targetTouches.length == 1 )
     {
         if ( Math.abs(targetTouches[0].x - startTouches[0].x) > 10 ||
              Math.abs(targetTouches[0].y - startTouches[0].y) > 10 )
