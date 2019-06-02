@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<body style="background: #000">
+
+<canvas id="canvas" width="1" height="1"
+onmousemove="mouseMove(event)"
+onmousedown="mouseDown(event)"
+onmouseUp="mouseUp()"
+onwheel="mouseWheel(event)"
+ontouchstart="touchStart(event)"
+ontouchmove="touchMove(event)"
+ontouchend="touchEnd(event)">
+Your browser does not support the HTML5 canvas tag.</canvas>
+
+<script>
+
+document.body.style.overflow = "hidden";
+var ctx = canvas.getContext( '2d' );
+var canvasWidth  = canvas.width  = document.documentElement.clientWidth;
+var canvasHeight = canvas.height = document.documentElement.clientHeight;
+var imageData = ctx.getImageData( 0, 0, canvasWidth, canvasHeight );
+var data = imageData.data;
+var startTouches = {};
+var targetTouches = {};
+
+var y0 = -1.5;
+var y1 =  1.5;
+var x0 = -0.5 - y1 * canvasWidth / canvasHeight;
+var x1 = -0.5 + y1 * canvasWidth / canvasHeight; 
+var x0save = 0;
+var y0save = 0;
+var x1save = 0;
+var y1save = 0;
+var mouseX0 = 0;
+var mouseY0 = 0;
+var mouseX  = 0;
+var mouseY  = 0;
+var mouseButtonDown = 0;
+var maxIterations = 255;
+var zoomFactor = 1.2;
+var printInfo = true;
+var rendering = false;
+// Pixel order
+// 0 8 2 C
+// A 4 E 5
+// 3 D 1 9
+// F 6 B 7
+var pixelOrder = [0, 10, 2, 8, 5, 7, 13, 15, 1, 11, 4, 14, 3, 9, 6, 12];
+var shiftCount = pixelOrder.length;
+
+
+function iterate( cr, ci )
+{
+    var zr = 0;
+    var zi = 0;
+    var i = 0;
+    for ( i = 0; i < maxIterations; i++ )
+    {
+        var zr2 = zr*zr;
+        var zi2 = zi*zi;
+        if ( zr2 + zi2 > 4 )
+            break;
+        zi = zr*zi;
+        zi = zi + zi + ci;
+        zr = zr2-zi2 + cr;
+    }
+    return i;
+}
+
+function drawGrid( size, shift )
+{
+    if ( shift == 0 )
+        rendering = true;
+    else if ( !rendering )
+        return;
+    if ( x0 == x0save && y0 == y0save && x1 == x1save && y1 == y1save )
+        return;
+    maxIterations = Math.min( 5000, Math.floor(75 / Math.sqrt(x1-x0)) );
+    var xshift = pixelOrder[shift]%size;
+    var yshift = Math.floor( pixelOrder[shift]/size );
+    for ( var y = yshift; y < canvasHeight; y+=size )
+    {
+        for ( var x = xshift; x < canvasWidth; x+=size )
+        {
+            var cr = x0 + (x1-x0) * x/canvasWidth;
+            var ci = y0 + (y1-y0) * y/canvasHeight;
+            var value = iterate( cr, ci ) % maxIterations;
+
+            if ( shift == 0 )
+            {
+                for ( var yy=0; yy<size; yy++ )
+                {
+                    for ( var xx=0; xx<size; xx++ )
+                    {
+                        var index = ((y+yy) * canvasWidth + (x+xx)) * 4;
+
+                        //data[  index] = (4*value) & 255;    // red
+                        //data[++index] = (6*value) & 255;    // green
+                        //data[++index] = (8*value) & 255;    // blue
+                        data[  index] = Math.min((4*value) & 511, 511-((4*value) & 511));    // red
+                        data[++index] = Math.min((5*value) & 511, 511-((5*value) & 511));    // green
+                        data[++index] = Math.min((6*value) & 511, 511-((6*value) & 511));    // blue
+                        data[++index] = 255;                // alpha
+                    }
+                }
+            }
+            else
+            {
+                var index = (y * canvasWidth + x) * 4;
+
+                //data[  index] = (4*value) & 255;    // red
+                //data[++index] = (6*value) & 255;    // green
+                //data[++index] = (8*value) & 255;    // blue
+                data[  index] = Math.min((4*value) & 511, 511-((4*value) & 511));    // red
+                data[++index] = Math.min((5*value) & 511, 511-((5*value) & 511));    // green
+                data[++index] = Math.min((6*value) & 511, 511-((6*value) & 511));    // blue
+                data[++index] = 255;                // alpha
+            }
+        }
+    }
+    ctx.putImageData( imageData, 0, 0 );
+    if ( printInfo )
+    {
+        var text = "zoom=" + (3.0 / (x1-x0)).toFixed(2) + "  iterations=" + maxIterations.toFixed(0);
+        ctx.font = "12px Arial";
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        ctx.miterLimit = 2;
+        ctx.strokeText( text, 20, 20);
+        ctx.fillStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.fillText( text, 20, 20);
+    }
+    if ( shift == size * size - 1 )
+        rendering = false;
+    if ( shift == shiftCount - 1 )
+    {
+        x0save = x0;
+        y0save = y0;
+        x1save = x1;
+        y1save = y1;
+    }
+}
+
+function delayedDrawGrid( size, shift )
+{
+    setTimeout( function() { drawGrid( size, shift ); }, 0 );
+}
+
+function draw()
+{
+    maxIterations = Math.min( 5000, Math.floor(75 / Math.sqrt(x1-x0)) );
+    for ( var shift = 0; shift < shiftCount; shift++ )
+    {
+        delayedDrawGrid( 4, shift );
+    }
+}
+
+function move( fromX, fromY, toX, toY )
+{
+    var dx = (x1 - x0) * (toX-fromX)/canvasWidth;
+    var dy = (y1 - y0) * (toY-fromY)/canvasHeight;
+    x0 -= dx;
+    y0 -= dy;
+    x1 -= dx;
+    y1 -= dy;
+    rendering = false;
+    draw();
+}
+
+function zoom( factor, centerX, centerY )
+{
+    if ( factor <= 0 )
+        return;
+    var dx = x1 - x0;
+    var dy = y1 - y0;
+    var cx = x0 + dx*centerX/canvasWidth;
+    var cy = y0 + dy*centerY/canvasHeight;
+    dx = dx*factor;
+    dy = dy*factor;
+    x0 = cx - dx*centerX/canvasWidth;
+    y0 = cy - dy*centerY/canvasHeight;
+    x1 = x0 + dx;
+    y1 = y0 + dy;
+    rendering = false;
+    draw();
+}
+
+function mouseDown( event )
+{
+    mouseButtonDown = event.which;
+    mouseX0 = mouseX;
+    mouseY0 = mouseY;
+}
+
+function mouseUp()
+{
+    switch ( mouseButtonDown )
+    {
+        case 2:
+            // middle mouse button
+            if ( mouseX != mouseX0 || mouseY != mouseY0 )
+            {
+                var width  = Math.abs(mouseX0-mouseX);
+                var height = Math.abs(mouseY0-mouseY);
+                var side = (width > height) ? width : height;
+                var dx = x1 - x0;
+                var dy = y1 - y0;
+                x0 = x0 + dx * mouseX0/canvasWidth;
+                y0 = y0 + dy * mouseY0/canvasHeight;
+                x1 = x0 + dx * side/canvasHeight;
+                y1 = y0 + dy * side/canvasHeight;
+                draw();
+            }
+            break;
+
+        default:
+            break;
+    }
+    mouseButtonDown = 0;
+}
+
+function mouseMove( event )
+{
+    mouseX = event.pageX;
+    mouseY = event.pageY;
+    switch ( mouseButtonDown )
+    {
+        case 1:
+            // left mouse button
+            move( mouseX0, mouseY0, mouseX, mouseY );
+            mouseX0 = mouseX;
+            mouseY0 = mouseY;
+            break;
+
+        case 2:
+            // middle mouse button
+            ctx.putImageData( imageData, 0, 0 );
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect( mouseX0, mouseY0, mouseX-mouseX0, mouseY-mouseY0 );
+            break;
+
+        default:
+            break;
+    }
+}
+
+function mouseWheel( event )
+{
+    var delta = event.deltaY;
+    if ( delta == 0 )
+        return;
+    if ( delta < 0 )
+    {
+        zoom( 1/zoomFactor, mouseX, mouseY );
+    }
+    else
+    {
+        zoom( zoomFactor, mouseX, mouseY );
+    }
+}
+
+function makeTouches(touches)
+{
+    return Array.from(touches).map(function (touch) {
+        return {
+            x: touch.pageX,
+            y: touch.pageY
+        };
+    });
+}
+
+function touchStart( event )
+{
+    if ( printInfo )
+    {
+//        ctx.fillText( "l=" + event.touches.length.toFixed(0), 20, 40);
+        ctx.fillText( "l=" + event.targetTouches.length.toFixed(0), 20, 40);
+    }
+//    startTouches = makeTouches(event.touches);
+    startTouches = makeTouches(event.targetTouches);
+    targetTouches = {};
+}
+
+function touchMove( event )
+{
+    event.preventDefault();
+    if ( printInfo )
+    {
+//        ctx.fillText( "l=" + event.touches.length.toFixed(0), 20, 60);
+        ctx.fillText( "l=" + event.targetTouches.length.toFixed(0), 20, 60);
+    }
+//    t = makeTouches(event.touches);
+    t = makeTouches(event.targetTouches);
+    if ( startTouches.length == t.length )
+        targetTouches = t;
+    ctx.fillStyle = "black";
+    ctx.fillRect( 20, 85, 200, 20 );
+    ctx.fillStyle = "white";
+    if ( printInfo )
+    {
+        if ( targetTouches.length > 1 )
+        {
+            ctx.fillText( "x0=" + targetTouches[0].x.toFixed(0) +
+                         " y0=" + targetTouches[0].y.toFixed(0) +
+                         " x1=" + targetTouches[1].x.toFixed(0) +
+                         " y1=" + targetTouches[1].y.toFixed(0), 20, 100);
+        }
+        else if ( targetTouches.length == 1 )
+        {
+            ctx.fillText( "x0=" + targetTouches[0].x.toFixed(0) +
+                         " y0=" + targetTouches[0].y.toFixed(0), 20, 100);
+        }
+    }
+
+    if ( startTouches.length == 1 && targetTouches.length == 1 )
+    {
+        if ( Math.abs(targetTouches[0].x - startTouches[0].x) > 10 ||
+             Math.abs(targetTouches[0].y - startTouches[0].y) > 10 )
+        {
+            move( startTouches[0].x, startTouches[0].y, targetTouches[0].x, targetTouches[0].y );
+            startTouches = targetTouches;
+        }
+    }
+}
+
+function touchEnd( event )
+{
+    if ( printInfo )
+    {
+        if ( startTouches.length > 1 )
+        {
+            ctx.fillText( "x0=" + startTouches[0].x.toFixed(0)  +
+                         " y0=" + startTouches[0].y.toFixed(0)  +
+                         " x1=" + startTouches[1].x.toFixed(0) +
+                         " y1=" + startTouches[1].y.toFixed(0), 20, 80);
+        }
+        else if ( startTouches.length == 1 )
+        {
+            ctx.fillText( "x0=" + startTouches[0].x.toFixed(0)  +
+                         " y0=" + startTouches[0].y.toFixed(0), 20, 80);
+        }
+    }
+
+    if ( startTouches.length > 1 && targetTouches.length > 1 )
+    {
+        var factor = Math.abs(startTouches[1].x  - startTouches[0].x) / 
+                     Math.abs(targetTouches[1].x - targetTouches[0].x);
+        zoom( factor, (startTouches[0].x+startTouches[1].x)/2, (startTouches[0].y+startTouches[1].y)/2 );
+    }
+}
+
+draw();
+
+</script>
+
+</body>
+</html>
